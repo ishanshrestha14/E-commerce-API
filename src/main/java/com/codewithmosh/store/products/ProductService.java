@@ -3,9 +3,10 @@ package com.codewithmosh.store.products;
 import lombok.AllArgsConstructor;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
-
-import java.util.List;
 
 @Service
 @AllArgsConstructor
@@ -14,14 +15,33 @@ public class ProductService {
     private final CategoryRepository categoryRepository;
     private final ProductMapper productMapper;
 
-    @Cacheable(value = "products", key = "'list-' + #categoryId")
-    public List<ProductDto> getAllProducts(Byte categoryId) {
-        if (categoryId != null) {
-            return productRepository.findByCategoryId(categoryId)
-                    .stream().map(productMapper::toDto).toList();
+    @Cacheable(
+        value = "products",
+        key = "#page + '-' + #size + '-' + #sortBy + '-' + #sortDir + '-' + #categoryId + '-' + #search"
+    )
+    public PagedResponse<ProductDto> getAllProducts(
+            Byte categoryId, String search, int page, int size, String sortBy, String sortDir
+    ) {
+        var sort = sortDir != null && sortDir.equalsIgnoreCase("desc")
+                ? Sort.by(sortBy != null ? sortBy : "name").descending()
+                : Sort.by(sortBy != null ? sortBy : "name").ascending();
+        var pageable = PageRequest.of(page, size, sort);
+
+        boolean hasCategory = categoryId != null;
+        boolean hasSearch = search != null && !search.isBlank();
+
+        Page<Product> products;
+        if (hasCategory && hasSearch) {
+            products = productRepository.findByCategoryIdAndNameContainingIgnoreCase(categoryId, search, pageable);
+        } else if (hasCategory) {
+            products = productRepository.findByCategoryId(categoryId, pageable);
+        } else if (hasSearch) {
+            products = productRepository.findByNameContainingIgnoreCase(search, pageable);
+        } else {
+            products = productRepository.findAllWithCategory(pageable);
         }
-        return productRepository.findAllWithCategory()
-                .stream().map(productMapper::toDto).toList();
+
+        return PagedResponse.from(products.map(productMapper::toDto));
     }
 
     @CacheEvict(value = "products", allEntries = true)

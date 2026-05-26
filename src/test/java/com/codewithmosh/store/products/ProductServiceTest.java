@@ -5,12 +5,15 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.Pageable;
 
 import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -22,17 +25,18 @@ class ProductServiceTest {
     @InjectMocks ProductService productService;
 
     @Test
-    void getAllProducts_noCategoryFilter_callsFindAllWithCategory() {
+    void getAllProducts_noCategoryNoSearch_callsFindAllWithCategory() {
         var product = new Product();
         var dto = new ProductDto();
-        when(productRepository.findAllWithCategory()).thenReturn(List.of(product));
+        when(productRepository.findAllWithCategory(any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(product)));
         when(productMapper.toDto(product)).thenReturn(dto);
 
-        var result = productService.getAllProducts(null);
+        var result = productService.getAllProducts(null, null, 0, 20, "name", "asc");
 
-        assertThat(result).containsExactly(dto);
-        verify(productRepository).findAllWithCategory();
-        verify(productRepository, never()).findByCategoryId(any());
+        assertThat(result.content()).containsExactly(dto);
+        assertThat(result.totalElements()).isEqualTo(1);
+        verify(productRepository).findAllWithCategory(any(Pageable.class));
     }
 
     @Test
@@ -40,14 +44,15 @@ class ProductServiceTest {
         var categoryId = (byte) 1;
         var product = new Product();
         var dto = new ProductDto();
-        when(productRepository.findByCategoryId(categoryId)).thenReturn(List.of(product));
+        when(productRepository.findByCategoryId(eq(categoryId), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(product)));
         when(productMapper.toDto(product)).thenReturn(dto);
 
-        var result = productService.getAllProducts(categoryId);
+        var result = productService.getAllProducts(categoryId, null, 0, 20, "name", "asc");
 
-        assertThat(result).containsExactly(dto);
-        verify(productRepository).findByCategoryId(categoryId);
-        verify(productRepository, never()).findAllWithCategory();
+        assertThat(result.content()).containsExactly(dto);
+        verify(productRepository).findByCategoryId(eq(categoryId), any(Pageable.class));
+        verify(productRepository, never()).findAllWithCategory(any(Pageable.class));
     }
 
     @Test

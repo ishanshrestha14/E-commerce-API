@@ -5,8 +5,6 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.util.UriComponentsBuilder;
 
-import java.util.List;
-
 @AllArgsConstructor
 @RestController
 @RequestMapping("/products")
@@ -14,10 +12,15 @@ public class ProductController {
     private final ProductService productService;
 
     @GetMapping
-    public List<ProductDto> getAllProducts(
-            @RequestParam(required = false) Byte categoryId
+    public PagedResponse<ProductDto> getAllProducts(
+            @RequestParam(required = false) Byte categoryId,
+            @RequestParam(required = false) String search,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(defaultValue = "name") String sortBy,
+            @RequestParam(defaultValue = "asc") String sortDir
     ) {
-        return productService.getAllProducts(categoryId);
+        return productService.getAllProducts(categoryId, search, page, size, sortBy, sortDir);
     }
 
     @PostMapping

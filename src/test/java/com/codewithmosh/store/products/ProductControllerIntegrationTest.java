@@ -53,18 +53,31 @@ class ProductControllerIntegrationTest {
 
     @Test
     @WithMockUser
-    void getAllProducts_returnsOkWithJsonArray() throws Exception {
+    void getAllProducts_returnsPagedResponse() throws Exception {
         mockMvc.perform(get("/products"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$").isArray());
+                .andExpect(jsonPath("$.content").isArray())
+                .andExpect(jsonPath("$.totalElements").isNumber())
+                .andExpect(jsonPath("$.totalPages").isNumber())
+                .andExpect(jsonPath("$.page").value(0))
+                .andExpect(jsonPath("$.size").value(20));
     }
 
     @Test
     @WithMockUser
-    void getAllProducts_withCategoryId_returnsOk() throws Exception {
-        mockMvc.perform(get("/products").param("categoryId", "1"))
+    void getAllProducts_withSearch_returnsFilteredResults() throws Exception {
+        mockMvc.perform(get("/products").param("search", "nonexistent_xyz"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$").isArray());
+                .andExpect(jsonPath("$.totalElements").value(0))
+                .andExpect(jsonPath("$.content").isArray());
+    }
+
+    @Test
+    @WithMockUser
+    void getAllProducts_withCustomPageSize_respectsPageSize() throws Exception {
+        mockMvc.perform(get("/products").param("size", "5").param("page", "0"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.size").value(5));
     }
 
     @Test
