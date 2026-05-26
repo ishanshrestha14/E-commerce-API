@@ -1,5 +1,7 @@
 # Spring Store - E-Commerce REST API
 
+![CI](https://github.com/ishanshrestha14/E-commerce-API/actions/workflows/ci.yml/badge.svg)
+
 A comprehensive e-commerce REST API built with Spring Boot, featuring user authentication, product management, shopping cart functionality, payment processing with Stripe, and order management.
 
 ## 🚀 Features
@@ -14,8 +16,10 @@ A comprehensive e-commerce REST API built with Spring Boot, featuring user authe
 ### Product Management
 
 - CRUD operations for products and categories
-- Product filtering by category
-- Product search and listing
+- Paginated product listing with configurable page size
+- Search by product name (case-insensitive substring match)
+- Filter by category
+- Redis caching with 10-minute TTL — cache is invalidated on any write
 
 ### Shopping Cart
 
@@ -52,9 +56,13 @@ A comprehensive e-commerce REST API built with Spring Boot, featuring user authe
 
 ### Database & Persistence
 
-- **MySQL** - Primary database
+- **MySQL 8** - Primary database
 - **Spring Data JPA** - Data access layer
 - **Flyway** - Database migration tool
+
+### Caching
+
+- **Redis 7** - Response caching for product listings
 
 ### Security
 
@@ -70,76 +78,105 @@ A comprehensive e-commerce REST API built with Spring Boot, featuring user authe
 
 - **MapStruct** - Object mapping
 - **Lombok** - Code generation
-- **SpringDoc OpenAPI** - API documentation
+- **SpringDoc OpenAPI** - API documentation (Swagger UI)
 - **Thymeleaf** - Template engine (for admin views)
 - **Spring Validation** - Input validation
+- **Testcontainers** - Integration tests with real MySQL and Redis
 
 ## 📋 Prerequisites
 
-- Java 17 or higher
+- Java 17
 - Maven 3.6+
-- MySQL 8.0+
+- Docker and Docker Compose (for running the full stack or integration tests)
 - Stripe account (for payment processing)
 
 ## ⚙️ Setup and Installation
 
-### 1. Clone the Repository
+### Option A — Docker Compose (recommended)
+
+The fastest way to get everything running:
 
 ```bash
-git clone <repository-url>
-cd spring-store
+git clone https://github.com/ishanshrestha14/E-commerce-API.git
+cd E-commerce-API
+
+# Copy and fill in your secrets
+cp .env.example .env
+# Edit .env — set DB_PASSWORD, SPRING_JWT_SECRET, and Stripe keys
+
+docker compose up --build
 ```
 
-### 2. Database Setup
+The app, MySQL, and Redis will all start together. The app waits for MySQL and Redis to be healthy before starting.
 
-```sql
--- Create the database (will be created automatically if using the default config)
-CREATE DATABASE store_api;
+Access the API at `http://localhost:8080`
+
+### Option B — Run locally (manual setup)
+
+**1. Clone the repository**
+
+```bash
+git clone https://github.com/ishanshrestha14/E-commerce-API.git
+cd E-commerce-API
 ```
 
-### 3. Environment Configuration
+**2. Start MySQL and Redis**
 
-Create a `.env` file in the root directory or set environment variables:
+You can use Docker to spin up just the dependencies:
+
+```bash
+docker compose up db redis -d
+```
+
+Or connect to your own existing MySQL and Redis instances.
+
+**3. Configure environment**
+
+Copy `.env.example` to `.env` and fill in your values:
 
 ```env
-# Database Configuration
+DB_HOST=localhost
+DB_NAME=store_api
 DB_USERNAME=root
-DB_PASSWORD=your_mysql_password
+DB_PASSWORD=your_password
 
-# JWT Configuration
-JWT_SECRET=your_jwt_secret_key
-JWT_ACCESS_TOKEN_EXPIRATION=900000
-JWT_REFRESH_TOKEN_EXPIRATION=604800000
+REDIS_HOST=localhost
+REDIS_PORT=6379
 
-# Stripe Configuration
-STRIPE_SECRET_KEY=your_stripe_secret_key
-STRIPE_WEBHOOK_SECRET=your_stripe_webhook_secret
+# Must be at least 32 characters
+SPRING_JWT_SECRET=change-me-to-a-secret-at-least-32-chars-long
 
-# Application Configuration
+STRIPE_SECRET_KEY=sk_test_...
+STRIPE_WEBHOOK_SECRET_KEY=whsec_...
+
 WEBSITE_URL=http://localhost:8080
 ```
 
-### 4. Run Database Migrations
+**4. Run the application**
 
 ```bash
-mvn flyway:migrate
+./mvnw spring-boot:run
 ```
 
-### 5. Build and Run the Application
+The application will start on `http://localhost:8080`. Flyway will run database migrations automatically on startup.
+
+## 🧪 Testing
+
+Integration tests use Testcontainers and spin up real MySQL and Redis containers — Docker must be running.
 
 ```bash
-# Build the application
-mvn clean package
-
-# Run the application
-mvn spring-boot:run
+./mvnw test
 ```
 
-The application will start on `http://localhost:8080`
+Tests include:
+- Unit tests for `CartService` and `ProductService` (Mockito, no Spring context)
+- Integration tests for `ProductController` against real containers
 
 ## 📚 API Documentation
 
-### Authentication Endpoints
+Swagger UI is available at `http://localhost:8080/swagger-ui.html` once the app is running.
+
+### Authentication
 
 #### Login
 
@@ -167,17 +204,44 @@ GET /auth/me
 Authorization: Bearer your_access_token
 ```
 
-### Product Endpoints
+### Products
 
-#### Get All Products
+#### List Products (paginated)
 
 ```http
 GET /products
-# Optional: Filter by category
-GET /products?categoryId=1
 ```
 
-#### Create Product (Admin)
+Query parameters:
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `page` | `0` | Page number (zero-based) |
+| `size` | `20` | Items per page |
+| `sortBy` | `name` | Field to sort by |
+| `sortDir` | `asc` | `asc` or `desc` |
+| `search` | — | Name substring filter |
+| `categoryId` | — | Filter by category |
+
+Example:
+
+```http
+GET /products?search=shoes&categoryId=2&page=0&size=10&sortBy=price&sortDir=desc
+```
+
+Response:
+
+```json
+{
+  "content": [...],
+  "page": 0,
+  "size": 10,
+  "totalElements": 42,
+  "totalPages": 5
+}
+```
+
+#### Create Product
 
 ```http
 POST /products
@@ -192,7 +256,7 @@ Content-Type: application/json
 }
 ```
 
-#### Update Product (Admin)
+#### Update Product
 
 ```http
 PUT /products/{id}
@@ -200,21 +264,21 @@ Authorization: Bearer your_access_token
 Content-Type: application/json
 
 {
-  "name": "Updated Product Name",
+  "name": "Updated Name",
   "description": "Updated description",
   "price": 34.99,
   "categoryId": 1
 }
 ```
 
-#### Delete Product (Admin)
+#### Delete Product
 
 ```http
 DELETE /products/{id}
 Authorization: Bearer your_access_token
 ```
 
-### Cart Endpoints
+### Cart
 
 #### Create Cart
 
@@ -262,7 +326,7 @@ DELETE /carts/{cartId}/items/{productId}
 DELETE /carts/{cartId}/items
 ```
 
-### Checkout & Payment Endpoints
+### Checkout & Payment
 
 #### Create Checkout Session
 
@@ -282,23 +346,18 @@ Content-Type: application/json
 ```http
 POST /checkout/webhook
 Stripe-Signature: webhook_signature
-Content-Type: application/json
-
-{
-  "webhook_payload": "..."
-}
 ```
 
-### Order Endpoints
+### Orders
 
-#### Get All Orders (User's orders)
+#### Get My Orders
 
 ```http
 GET /orders
 Authorization: Bearer your_access_token
 ```
 
-#### Get Specific Order
+#### Get Order by ID
 
 ```http
 GET /orders/{orderId}
@@ -307,98 +366,59 @@ Authorization: Bearer your_access_token
 
 ## 🗄️ Database Schema
 
-### Main Tables
+- **users** — User accounts and credentials
+- **profiles** — Extended user information
+- **addresses** — User shipping addresses
+- **categories** — Product categories
+- **products** — Product catalog
+- **carts** — Shopping carts
+- **cart_items** — Cart line items
+- **orders** — Order records
+- **order_items** — Order line items
+- **wishlist** — User wishlists
 
-- **users** - User accounts and credentials
-- **profiles** - Extended user information
-- **addresses** - User shipping addresses
-- **categories** - Product categories
-- **products** - Product catalog
-- **carts** - Shopping carts
-- **cart_items** - Cart line items
-- **orders** - Order records
-- **order_items** - Order line items
-- **wishlist** - User wishlists
+## 🔧 Configuration Reference
 
-## 🔧 Configuration
+All configuration is driven by environment variables. See `.env.example` for the full list.
 
-### Application Properties
-
-Key configuration in `src/main/resources/application.yaml`:
+Key settings in `src/main/resources/application.yaml`:
 
 ```yaml
 spring:
-  application:
-    name: spring-store
   datasource:
-    url: jdbc:mysql://localhost:3306/store_api?createDatabaseIfNotExist=true
-    username: ${DB_USERNAME:root}
-    password: ${DB_PASSWORD:Password}
-  jpa:
-    show-sql: true
+    url: jdbc:mysql://${DB_HOST:localhost}:3306/${DB_NAME:store_api}?createDatabaseIfNotExist=true
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
   jwt:
-    secret: ${JWT_SECRET:default_secret}
-    accessTokenExpiration: 900000
-    refreshTokenExpiration: 604800000
-
-stripe:
-  secretKey: ${STRIPE_SECRET_KEY}
-  webhookSecretKey: ${STRIPE_WEBHOOK_SECRET}
+    secret: ${SPRING_JWT_SECRET}
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health   # /actuator/health
 ```
 
-## 🧪 Testing
-
-### Run Tests
+## 📦 Build
 
 ```bash
-mvn test
-```
+# Create JAR
+./mvnw clean package -DskipTests
 
-### API Testing
-
-You can use tools like Postman, curl, or any HTTP client to test the API endpoints. The application also includes Swagger UI for interactive API documentation.
-
-Access Swagger UI at: `http://localhost:8080/swagger-ui.html`
-
-## 📦 Build and Deployment
-
-### Create JAR
-
-```bash
-mvn clean package
-```
-
-### Run JAR
-
-```bash
+# Run JAR directly
 java -jar target/store-0.0.1-SNAPSHOT.jar
-```
-
-### Docker Support
-
-The application can be containerized using Docker. Create a `Dockerfile` in the project root:
-
-```dockerfile
-FROM openjdk:17-jdk-slim
-COPY target/store-0.0.1-SNAPSHOT.jar app.jar
-EXPOSE 8080
-ENTRYPOINT ["java", "-jar", "/app.jar"]
 ```
 
 ## 🤝 Contributing
 
 1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
+2. Create a feature branch (`git checkout -b feature/your-feature`)
+3. Commit your changes
+4. Push to the branch and open a Pull Request
 
 ## 📄 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## Contribution
-
-Feel free to clone the repo and extend it. You can also create PRs if you wish to contribute in this repo. However, I won't be extending this project further myself.
+This project is licensed under the MIT License.
 
 ---
