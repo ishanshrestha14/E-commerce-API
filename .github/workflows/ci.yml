@@ -14,6 +14,7 @@ jobs:
       SPRING_JWT_SECRET: test-secret-key-that-is-long-enough-32plus
       STRIPE_SECRET_KEY: sk_test_dummy
       STRIPE_WEBHOOK_SECRET_KEY: whsec_dummy
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
     steps:
       - uses: actions/checkout@v4
